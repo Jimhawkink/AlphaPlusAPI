@@ -29,6 +29,8 @@ namespace AlphaPlusAPI.Controllers
             _db = databaseService;
         }
 
+        // ==================== Invoice Number Generation ====================
+
         [HttpGet("max-id")]
         [AllowAnonymous]
         public async Task<IActionResult> GetMaxInvoiceId()
@@ -131,6 +133,8 @@ namespace AlphaPlusAPI.Controllers
             });
         }
 
+        // ==================== Main Save Sale Endpoint ====================
+
         [HttpPost("save")]
         [AllowAnonymous]
         public async Task<IActionResult> SaveSale([FromBody] SaveSaleRequest request)
@@ -176,78 +180,33 @@ namespace AlphaPlusAPI.Controllers
 
                 _logger.LogInformation($"📅 Using invoice date: {parsedDate:yyyy-MM-dd HH:mm:ss}");
 
-                int newInvId;
-                
-                if (request.InvId.HasValue && request.InvId.Value > 0)
+                _logger.LogInformation("💾 Inserting into InvoiceInfo...");
+                const string invoiceQuery = @"
+    INSERT INTO InvoiceInfo (
+        InvoiceNo, InvoiceDate, OpenID, CurrencyCode, ExchangeRate,
+        GrandTotal, Cash, Change, TaxType, Member_ID, DiscPer, DiscAmt,
+        SalesmanID, CustID, LoyaltyMemberID, LP, BillNote, SalesmanName, CustomerName
+    )
+    OUTPUT INSERTED.Inv_ID
+    VALUES (
+        @InvoiceNo, @InvoiceDate, 0, 'KES', 1,
+        @GrandTotal, @AmountTendered, @ChangeAmount, 'Inclusive', '', 0, @TotalDiscount,
+        '', 0, 0, 0, '', @SalesmanName, @CustomerName
+    )";
+                var invoiceParams = new
                 {
-                    _logger.LogInformation($"💾 Inserting with explicit Inv_ID: {request.InvId.Value}");
-                    
-                    const string invoiceQueryWithIdentity = @"
-                        SET IDENTITY_INSERT InvoiceInfo ON;
-                        
-                        INSERT INTO InvoiceInfo (
-                            Inv_ID, InvoiceNo, InvoiceDate, OpenID, CurrencyCode, ExchangeRate,
-                            GrandTotal, Cash, Change, TaxType, Member_ID, DiscPer, DiscAmt,
-                            SalesmanID, CustID, LoyaltyMemberID, LP, BillNote, SalesmanName, CustomerName
-                        )
-                        VALUES (
-                            @InvId, @InvoiceNo, @InvoiceDate, 0, 'KES', 1,
-                            @GrandTotal, @AmountTendered, @ChangeAmount, 'Inclusive', '', 0, @TotalDiscount,
-                            '', 0, 0, 0, '', @SalesmanName, @CustomerName
-                        );
-                        
-                        SET IDENTITY_INSERT InvoiceInfo OFF;
-                        
-                        SELECT @InvId;";
-                    
-                    var invoiceParams = new
-                    {
-                        InvId = request.InvId.Value,
-                        InvoiceNo = request.InvoiceNo,
-                        InvoiceDate = parsedDate,
-                        request.GrandTotal,
-                        request.AmountTendered,
-                        request.ChangeAmount,
-                        request.TotalDiscount,
-                        request.SalesmanName,
-                        request.CustomerName
-                    };
+                    InvoiceNo = request.InvoiceNo,
+                    InvoiceDate = parsedDate,
+                    request.GrandTotal,
+                    request.AmountTendered,
+                    request.ChangeAmount,
+                    request.TotalDiscount,
+                    request.SalesmanName,
+                    request.CustomerName
+                };
 
-                    newInvId = await connection.ExecuteScalarAsync<int>(invoiceQueryWithIdentity, invoiceParams, transaction);
-                    _logger.LogInformation($"✅ InvoiceInfo inserted with explicit ID - Inv_ID: {newInvId}");
-                }
-                else
-                {
-                    _logger.LogInformation("💾 Inserting with auto-generated Inv_ID");
-                    
-                    const string invoiceQueryAutoId = @"
-                        INSERT INTO InvoiceInfo (
-                            InvoiceNo, InvoiceDate, OpenID, CurrencyCode, ExchangeRate,
-                            GrandTotal, Cash, Change, TaxType, Member_ID, DiscPer, DiscAmt,
-                            SalesmanID, CustID, LoyaltyMemberID, LP, BillNote, SalesmanName, CustomerName
-                        )
-                        OUTPUT INSERTED.Inv_ID
-                        VALUES (
-                            @InvoiceNo, @InvoiceDate, 0, 'KES', 1,
-                            @GrandTotal, @AmountTendered, @ChangeAmount, 'Inclusive', '', 0, @TotalDiscount,
-                            '', 0, 0, 0, '', @SalesmanName, @CustomerName
-                        )";
-                    
-                    var invoiceParams = new
-                    {
-                        InvoiceNo = request.InvoiceNo,
-                        InvoiceDate = parsedDate,
-                        request.GrandTotal,
-                        request.AmountTendered,
-                        request.ChangeAmount,
-                        request.TotalDiscount,
-                        request.SalesmanName,
-                        request.CustomerName
-                    };
-
-                    newInvId = await connection.ExecuteScalarAsync<int>(invoiceQueryAutoId, invoiceParams, transaction);
-                    _logger.LogInformation($"✅ InvoiceInfo inserted - New Inv_ID: {newInvId}");
-                }
+                int newInvId = await connection.ExecuteScalarAsync<int>(invoiceQuery, invoiceParams, transaction);
+                _logger.LogInformation($"✅ InvoiceInfo inserted - New Inv_ID: {newInvId}");
 
                 _logger.LogInformation($"📦 Inserting {request.Products.Count} products into Invoice_Product...");
                 const string productQuery = @"
@@ -361,6 +320,8 @@ namespace AlphaPlusAPI.Controllers
             }
         }
 
+        // ==================== Helper Methods ====================
+
         private async Task<string> GenerateInvoiceNo(SqlConnection connection, SqlTransaction transaction)
         {
             try
@@ -452,6 +413,8 @@ namespace AlphaPlusAPI.Controllers
             }
         }
 
+        // ==================== Test Endpoints ====================
+
         [HttpPost("test-save")]
         [AllowAnonymous]
         public async Task<IActionResult> TestSaveSale()
@@ -531,6 +494,8 @@ namespace AlphaPlusAPI.Controllers
                 return BadRequest(new { success = false, error = ex.Message });
             }
         }
+
+        // ==================== Invoice Retrieval Endpoints ====================
 
         [HttpGet]
         [AllowAnonymous]
@@ -765,8 +730,7 @@ namespace AlphaPlusAPI.Controllers
                         COUNT(*) as TotalInvoices,
                         ISNULL(SUM(GrandTotal), 0) as TotalSales,
                         ISNULL(SUM(DiscAmt), 0) as TotalDiscount,
-                        ISNULL(AVG(GrandTotal), 0) as AverageSale,
-                        MIN(GrandTotal) as MinSale,
+                        ISNULL(AVG(GrandTotal), 0) as AverageSale,MIN(GrandTotal) as MinSale,
                         MAX(GrandTotal) as MaxSale
                     FROM InvoiceInfo
                     WHERE CAST(InvoiceDate AS DATE) = @Date";
@@ -827,6 +791,8 @@ namespace AlphaPlusAPI.Controllers
                 });
             }
         }
+
+        // ==================== DTOs ====================
 
         public class InvoiceInfo
         {
