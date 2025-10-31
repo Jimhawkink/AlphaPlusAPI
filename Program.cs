@@ -5,30 +5,45 @@ using AlphaPlusAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container
+// ============================
+// 1️⃣  Add Services to Container
+// ============================
+
+// Add controller support
 builder.Services.AddControllers();
+
+// Add Swagger for API documentation
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Register DatabaseService
-builder.Services.AddScoped<DatabaseService>();
+// Register custom services
+builder.Services.AddScoped<DatabaseService>();  // Database helper
+builder.Services.AddScoped<AuthService>();      // Authentication and user logic
 
-// Configure CORS
+// ============================
+// 2️⃣  Configure CORS
+// ============================
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll",
-        policy =>
-        {
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
-        });
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
 });
 
-// Configure JWT Authentication
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "YourDefaultSecretKeyHere_ChangeThis!";
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "AlphaPlusAPI";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "AlphaPlusAPI";
+// ============================
+// 3️⃣  Configure JWT Authentication
+// ============================
+
+// Read JWT values from appsettings.json or Render env vars
+var jwtKey = builder.Configuration["JwtSettings:SecretKey"]
+             ?? "YourSuperSecretKeyForAlphaPlusApp2025!@#$%";
+var jwtIssuer = builder.Configuration["JwtSettings:Issuer"]
+                ?? "AlphaPlusAPI";
+var jwtAudience = builder.Configuration["JwtSettings:Audience"]
+                  ?? "AlphaPlusApp";
 
 builder.Services.AddAuthentication(options =>
 {
@@ -37,6 +52,9 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
+    options.RequireHttpsMetadata = false;
+    options.SaveToken = true;
+
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
@@ -49,31 +67,52 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// ============================
+// 4️⃣  Build the App
+// ============================
 var app = builder.Build();
 
-// Configure the HTTP request pipeline
+// ============================
+// 5️⃣  Configure Middleware
+// ============================
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+    app.UseDeveloperExceptionPage(); // Detailed errors in dev
+}
+else
+{
+    // Optional: force HTTPS redirect in production
+    app.UseHsts();
 }
 
 app.UseHttpsRedirection();
 
+// Enable CORS for all requests
 app.UseCors("AllowAll");
 
+// Enable Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Map controller routes
 app.MapControllers();
 
-// Add a simple health check endpoint
+// ============================
+// 6️⃣  Health Check Endpoint
+// ============================
 app.MapGet("/", () => new
 {
-    status = "Running",
-    message = "AlphaPlus API is online",
-    timestamp = DateTime.Now,
-    version = "1.0.0"
+    status = "Running ✅",
+    environment = app.Environment.EnvironmentName,
+    message = "AlphaPlus API is online and secure.",
+    timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+    version = "v1.0.0"
 });
 
+// ============================
+// 7️⃣  Run the App
+// ============================
 app.Run();
