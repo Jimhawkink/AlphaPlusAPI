@@ -185,18 +185,18 @@ namespace AlphaPlusAPI.Controllers
             {
                 _logger.LogInformation("🚀 Starting sale transaction...");
 
-                int nextInvId = request.InvId;
+                int invoiceIdToUse = request.InvId;
                 string invoiceNo = request.InvoiceNo;
-                
-                _logger.LogInformation($"✅ Using from request: InvId={nextInvId}, InvoiceNo={invoiceNo}");
+
+                _logger.LogInformation($"✅ Using from request: InvId={invoiceIdToUse}, InvoiceNo={invoiceNo}");
 
                 const string checkIdQuery = "SELECT COUNT(*) FROM InvoiceInfo WHERE Inv_ID = @InvId";
-                int existingCount = await connection.ExecuteScalarAsync<int>(checkIdQuery, new { InvId = nextInvId }, transaction);
+                int existingCount = await connection.ExecuteScalarAsync<int>(checkIdQuery, new { InvId = invoiceIdToUse }, transaction);
                 
                 if (existingCount > 0)
                 {
-                    _logger.LogError($"❌ InvId {nextInvId} already exists in database!");
-                    throw new Exception($"Invoice ID {nextInvId} already exists. Please generate a new invoice number.");
+                    _logger.LogError($"❌ InvId {invoiceIdToUse} already exists in database!");
+                    throw new Exception($"Invoice ID {invoiceIdToUse} already exists. Please generate a new invoice number.");
                 }
 
                 const string checkNoQuery = "SELECT COUNT(*) FROM InvoiceInfo WHERE InvoiceNo = @InvoiceNo";
@@ -229,27 +229,21 @@ namespace AlphaPlusAPI.Controllers
         '', 0, 0, 0, '', @SalesmanName, @CustomerName
     );";
 
-var invoiceParams = new
-{
-    InvoiceNo = invoiceNo,
-    InvoiceDate = parsedDate,
-    request.GrandTotal,
-    request.AmountTendered,
-    request.ChangeAmount,
-    request.TotalDiscount,
-    request.SalesmanName,
-    request.CustomerName
-};
-
-// This will return the auto-generated Inv_ID
-int nextInvId = await connection.ExecuteScalarAsync<int>(invoiceQuery, invoiceParams, transaction);
-_logger.LogInformation($"✅ InvoiceInfo inserted - Generated Inv_ID: {nextInvId}");
-
-
-                if (invoiceRows == 0)
+                var invoiceParams = new
                 {
-                    throw new Exception("Failed to insert invoice - no rows affected");
-                }
+                    InvoiceNo = invoiceNo,
+                    InvoiceDate = parsedDate,
+                    request.GrandTotal,
+                    request.AmountTendered,
+                    request.ChangeAmount,
+                    request.TotalDiscount,
+                    request.SalesmanName,
+                    request.CustomerName
+                };
+
+                // This will return the auto-generated Inv_ID
+                int nextInvId = await connection.ExecuteScalarAsync<int>(invoiceQuery, invoiceParams, transaction);
+                _logger.LogInformation($"✅ InvoiceInfo inserted - Generated Inv_ID: {nextInvId}");
 
                 _logger.LogInformation($"📦 Inserting {request.Products.Count} products into Invoice_Product...");
                 const string productQuery = @"
@@ -363,6 +357,7 @@ _logger.LogInformation($"✅ InvoiceInfo inserted - Generated Inv_ID: {nextInvId
             }
         }
 
+        // --- Remaining methods (GenerateInvoiceNo, DeductStock, TestSaveSale, TestInvoiceAndStock, GetInvoices, GetInvoiceById, SearchInvoices, GetDailyStats, InvoiceInfo class) ---
         private async Task<string> GenerateInvoiceNo(SqlConnection connection, SqlTransaction transaction)
         {
             try
@@ -705,7 +700,6 @@ _logger.LogInformation($"✅ InvoiceInfo inserted - Generated Inv_ID: {nextInvId
                 });
             }
         }
-
         [HttpGet("search")]
         [AllowAnonymous]
         public async Task<IActionResult> SearchInvoices([FromQuery] string queryTerm)
@@ -804,7 +798,8 @@ _logger.LogInformation($"✅ InvoiceInfo inserted - Generated Inv_ID: {nextInvId
                         MaxSale = Convert.ToDecimal(row["MaxSale"])
                     };
 
-                    return Ok(new{
+                    return Ok(new
+                    {
                         success = true,
                         message = "Daily stats retrieved successfully",
                         data = result
@@ -815,7 +810,7 @@ _logger.LogInformation($"✅ InvoiceInfo inserted - Generated Inv_ID: {nextInvId
                     return Ok(new
                     {
                         success = true,
-                        message = "No data found for today",
+                        message = "No data found for the specified date",
                         data = new
                         {
                             TotalInvoices = 0,
