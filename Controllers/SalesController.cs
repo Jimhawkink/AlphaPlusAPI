@@ -217,36 +217,34 @@ namespace AlphaPlusAPI.Controllers
                 _logger.LogInformation("💾 Inserting into InvoiceInfo with IDENTITY_INSERT...");
                 
                 const string invoiceQuery = @"
-                    SET IDENTITY_INSERT InvoiceInfo ON;
-                    
-                    INSERT INTO InvoiceInfo (
-                        Inv_ID, InvoiceNo, InvoiceDate, OpenID, CurrencyCode, ExchangeRate,
-                        GrandTotal, Cash, Change, TaxType, Member_ID, DiscPer, DiscAmt,
-                        SalesmanID, CustID, LoyaltyMemberID, LP, BillNote, SalesmanName, CustomerName
-                    )
-                    VALUES (
-                        @Inv_ID, @InvoiceNo, @InvoiceDate, 0, 'KES', 1,
-                        @GrandTotal, @AmountTendered, @ChangeAmount, 'Inclusive', '', 0, @TotalDiscount,
-                        '', 0, 0, 0, '', @SalesmanName, @CustomerName
-                    );
-                    
-                    SET IDENTITY_INSERT InvoiceInfo OFF;";
+    INSERT INTO InvoiceInfo (
+        InvoiceNo, InvoiceDate, OpenID, CurrencyCode, ExchangeRate,
+        GrandTotal, Cash, Change, TaxType, Member_ID, DiscPer, DiscAmt,
+        SalesmanID, CustID, LoyaltyMemberID, LP, BillNote, SalesmanName, CustomerName
+    )
+    OUTPUT INSERTED.Inv_ID
+    VALUES (
+        @InvoiceNo, @InvoiceDate, 0, 'KES', 1,
+        @GrandTotal, @AmountTendered, @ChangeAmount, 'Inclusive', '', 0, @TotalDiscount,
+        '', 0, 0, 0, '', @SalesmanName, @CustomerName
+    );";
 
-                var invoiceParams = new
-                {
-                    Inv_ID = nextInvId,
-                    InvoiceNo = invoiceNo,
-                    InvoiceDate = parsedDate,
-                    request.GrandTotal,
-                    request.AmountTendered,
-                    request.ChangeAmount,
-                    request.TotalDiscount,
-                    request.SalesmanName,
-                    request.CustomerName
-                };
+var invoiceParams = new
+{
+    InvoiceNo = invoiceNo,
+    InvoiceDate = parsedDate,
+    request.GrandTotal,
+    request.AmountTendered,
+    request.ChangeAmount,
+    request.TotalDiscount,
+    request.SalesmanName,
+    request.CustomerName
+};
 
-                int invoiceRows = await connection.ExecuteAsync(invoiceQuery, invoiceParams, transaction);
-                _logger.LogInformation($"✅ InvoiceInfo inserted - Rows affected: {invoiceRows}, Inv_ID: {nextInvId}");
+// This will return the auto-generated Inv_ID
+int nextInvId = await connection.ExecuteScalarAsync<int>(invoiceQuery, invoiceParams, transaction);
+_logger.LogInformation($"✅ InvoiceInfo inserted - Generated Inv_ID: {nextInvId}");
+
 
                 if (invoiceRows == 0)
                 {
