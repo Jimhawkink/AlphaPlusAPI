@@ -5,6 +5,12 @@ using AlphaPlusAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ============ Determine runtime port early and bind =================
+// Read the port Render (or other hosting) provides, fallback to 8080
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+// Make sure the host binds to the expected port BEFORE building the app
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
 // ============================
 // 1️⃣  Add Services to Container
 // ============================
@@ -71,7 +77,8 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false; // For development/testing
+    // For production you should set RequireHttpsMetadata = true when HTTPS is configured
+    options.RequireHttpsMetadata = false; // For development/testing and Render HTTP-to-HTTPS proxy scenarios
     options.SaveToken = true;
 
     options.TokenValidationParameters = new TokenValidationParameters
@@ -125,14 +132,28 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    app.UseHsts(); // HTTPS strict transport security
+    app.UseHsts(); // HTTPS strict transport security (only effective if HTTPS is configured by host)
+}
+
+// NOTE: Some hosts (like Render) do TLS termination in front of your container and forward HTTP traffic inside.
+// If you don't have HTTPS configured inside the container, forcing UseHttpsRedirection() can cause "Failed to determine the https port" warnings
+// To avoid undesirable redirects / errors, make HTTPS redirection conditional based on an environment flag.
+var enableHttpsRedirectEnv = Environment.GetEnvironmentVariable("ENABLE_HTTPS_REDIRECT");
+if (!string.IsNullOrEmpty(enableHttpsRedirectEnv) && bool.TryParse(enableHttpsRedirectEnv, out var enableHttpsRedirect) && enableHttpsRedirect)
+{
+    // Only call HTTPS redirection when explicitly enabled (set ENABLE_HTTPS_REDIRECT=true in env when you have HTTPS configured)
+    app.UseHttpsRedirection();
+}
+else
+{
+    // If not enabled, log this so it's easy to see in container logs
+    Console.WriteLine("⚠️ HTTPS redirection is disabled. To enable set environment variable ENABLE_HTTPS_REDIRECT=true and configure HTTPS.");
 }
 
 // ⚠️ IMPORTANT: Order matters!
-app.UseHttpsRedirection();  // 1. Redirect HTTP to HTTPS
-app.UseCors("AllowAll");    // 2. Enable CORS
-app.UseAuthentication();    // 3. Enable authentication
-app.UseAuthorization();     // 4. Enable authorization
+app.UseCors("AllowAll");    // 1. Enable CORS
+app.UseAuthentication();    // 2. Enable authentication
+app.UseAuthorization();     // 3. Enable authorization
 
 // Map controller routes
 app.MapControllers();
@@ -149,8 +170,7 @@ app.MapGet("/", () => new
     message = "AlphaPlus API is online and secure.",
     timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC"),
     version = "v1.0.0",
-    endpoints = new[]
-    {
+    endpoints = new[] {
         "/api/auth/login",
         "/api/products",
         "/api/dashboard",
@@ -178,7 +198,7 @@ app.MapGet("/api/health", () => new
         jwtIssuer,
         jwtAudience,
         hasConnectionString = !string.IsNullOrEmpty(
-            builder.Configuration.GetConnectionString("DefaultConnection") 
+            builder.Configuration.GetConnectionString("DefaultConnection")
             ?? Environment.GetEnvironmentVariable("DATABASE_CONNECTION_STRING")
         )
     }
@@ -201,7 +221,7 @@ try
     {
         var dbService = scope.ServiceProvider.GetRequiredService<DatabaseService>();
         Console.WriteLine("🔍 Testing database connection...");
-        
+
         using (var conn = dbService.GetConnection())
         {
             await conn.OpenAsync();
@@ -219,7 +239,6 @@ catch (Exception ex)
 // ============================
 // 8️⃣  Run the App
 // ============================
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 Console.WriteLine($"\n{'=',-50}");
 Console.WriteLine($"🚀 AlphaPlus API Starting");
 Console.WriteLine($"{'=',-50}");
@@ -229,4 +248,5 @@ Console.WriteLine($"📚 Swagger UI: /swagger");
 Console.WriteLine($"💚 Health Check: /api/health");
 Console.WriteLine($"{'=',-50}\n");
 
-app.Run();
+// Explicitly run on the same bound URL to be explicit and consistent with builder.WebHost.UseUrls above
+app.Run($"http://0.0.0.0:{port}");
